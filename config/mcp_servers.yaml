@@ -1,0 +1,39 @@
+# MCP Servers Configuration
+# This file defines all available MCP (Model Context Protocol) servers that the agent can connect to.
+# The agent discovers all configured servers at startup and registers their tools.
+
+servers:
+  # Example 1: Stdio Transport (subprocess-based MCP server)
+  # The agent communicates with the MCP server via stdin/stdout.
+  - name: "local-tools"
+    type: "stdio"
+    command: "python"
+    args:
+      - "-m"
+      - "mcp.server"
+      - "local_tools"
+    description: "Local filesystem and development tools"
+    timeout_ms: 5000
+
+  # Example 2: SSE Transport (Server-Sent Events via HTTP)
+  # The agent communicates with the MCP server over HTTP using Server-Sent Events.
+  - name: "remote-api"
+    type: "sse"
+    url: "http://localhost:8001/mcp"
+    description: "Remote API tools accessible over HTTP"
+    timeout_ms: 5000
+
+  # Example 3: FastMCP Transport (in-process FastMCP server)
+  # The MCP server runs in-process within the helios-agent application.
+  - name: "internal-tools"
+    type: "fastmcp"
+    module_path: "mcp_agent.mcp.server"
+    description: "Built-in example tools (echo, calculator, etc.)"
+    timeout_ms: 5000
+
+# Notes:
+# - Each server entry defines a transport type and connection details
+# - Tools from all servers are discovered at startup and registered in ToolRegistry
+# - Tool failures are handled with automatic retry and fallback logic
+# - Remove or comment out a server entry to disable it
+# - The agent will log all discovered tools and their server associations

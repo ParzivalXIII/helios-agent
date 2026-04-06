@@ -19,11 +19,11 @@
 
 **Purpose**: Create project skeleton, config files, and container definitions. No code logic yet.
 
-- [ ] T001 Create src/mcp_agent package directory tree with all `__init__.py` stubs for api/, agent/, mcp/, session/, logging/, utils/ in `src/mcp_agent/`
-- [ ] T002 [P] Create `config/mcp_servers.yaml` template with one stdio, one sse, and one fastmcp example entry
-- [ ] T003 [P] Create `.env.example` with all required environment variables: `LLM_BASE_URL`, `LLM_MODEL`, `REDIS_URL`, `MAX_TURNS`, `SESSION_TTL_SECONDS`, `TOOL_TIMEOUT_MS`, `LOG_LEVEL`, `MCP_CONFIG_PATH`
-- [ ] T004 [P] Create `Dockerfile` with multi-stage build (builder + final), non-root `appuser`, health check, and `CMD ["uvicorn", "mcp_agent.main:app", ...]`
-- [ ] T005 [P] Create `docker-compose.yml` defining `redis`, `openrouter-llm`, and `helios-agent` services with correct `depends_on`, volumes, and env references
+- [X] T001 Create src/mcp_agent package directory tree with all `__init__.py` stubs for api/, agent/, mcp/, session/, logging/, utils/ in `src/mcp_agent/`
+- [X] T002 [P] Create `config/mcp_servers.yaml` template with one stdio, one sse, and one fastmcp example entry
+- [X] T003 [P] Create `.env.example` with all required environment variables: `LLM_BASE_URL`, `LLM_MODEL`, `REDIS_URL`, `MAX_TURNS`, `SESSION_TTL_SECONDS`, `TOOL_TIMEOUT_MS`, `LOG_LEVEL`, `MCP_CONFIG_PATH`
+- [X] T004 [P] Create `Dockerfile` with multi-stage build (builder + final), non-root `appuser`, health check, and `CMD ["uvicorn", "mcp_agent.main:app", ...]`
+- [X] T005 [P] Create `docker-compose.yml` defining `redis`, `openrouter-llm`, and `helios-agent` services with correct `depends_on`, volumes, and env references
 
 **Checkpoint**: Project skeleton exists; all directories and config templates in place.
 

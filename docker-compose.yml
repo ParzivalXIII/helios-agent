@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # Redis: Session state storage and distributed locks
+  redis:
+    image: redis:7.2-alpine
+    container_name: helios-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    command: redis-server --appendonly yes
+    networks:
+      - helios-network
+
+  # OpenRouter LLM API (mock/stub for local development)
+  # In production, this would be the actual OpenRouter API endpoint
+  # For local testing, replace with a mock HTTP server or remove this service
+  # and configure LLM_BASE_URL to point to the actual remote API
+  openrouter-llm:
+    image: mockserver/mockserver:latest
+    container_name: helios-llm
+    ports:
+      - "8001:1080"
+    environment:
+      MOCKSERVER_PROPERTY_FILE: /config/mockserver.properties
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1080", "||", "exit", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - helios-network
+    depends_on:
+      - redis
+
+  # helios-agent: Main FastAPI application
+  helios-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: helios-agent
+    ports:
+      - "8000:8000"
+    environment:
+      # LLM Configuration
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openrouter.ai/api/v1}
+      - LLM_MODEL=${LLM_MODEL:-openrouter/anthropic/claude-3.5-sonnet}
+      
+      # Redis Configuration
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      
+      # Agent Behavior
+      - MAX_TURNS=${MAX_TURNS:-5}
+      - SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS:-3600}
+      - TOOL_TIMEOUT_MS=${TOOL_TIMEOUT_MS:-5000}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # MCP Configuration
+      - MCP_CONFIG_PATH=${MCP_CONFIG_PATH:-./config/mcp_servers.yaml}
+    volumes:
+      # Mount config directory as read-only (for mcp_servers.yaml)
+      - ./config:/app/config:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      openrouter-llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - helios-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  helios-network:
+    driver: bridge
