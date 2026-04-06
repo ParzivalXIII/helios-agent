@@ -30,15 +30,12 @@ class ToolCallSummary(BaseModel):
     """Summary of a tool call for API response."""
 
     tool_id: str = Field(..., description="Fully-qualified tool identifier.")
-    status: Literal["pending", "success", "failed", "retried"] = Field(
+    status: Literal["success", "failure", "retry", "fallback", "timeout"] = Field(
         ..., description="Tool execution status."
     )
-    attempt_count: int = Field(
-        default=1, description="Number of execution attempts."
-    )
     duration_ms: int = Field(default=0, description="Execution time in milliseconds.")
-    fallback_used: bool = Field(
-        default=False, description="True if fallback tool was invoked."
+    fallback_used: str | None = Field(
+        default=None, description="Fallback tool_id if used, or None."
     )
 
 
@@ -47,11 +44,20 @@ class ChatResponse(BaseModel):
 
     session_id: str = Field(..., description="Session UUID4.")
     response: str = Field(..., description="Final LLM-generated response.")
+    success: bool = Field(
+        default=True, description="True if successful; False if error occurred."
+    )
     turn_count: int = Field(..., description="Total turns in this session.")
     tool_calls: list[ToolCallSummary] = Field(
         default_factory=list, description="Tool calls made this turn."
     )
     duration_ms: int = Field(..., description="Total request processing time.")
+    error: "ErrorResponse | None" = Field(
+        default=None, description="Error details if success is False."
+    )
+    metadata: dict = Field(
+        default_factory=dict, description="Client metadata echoed back."
+    )
 
 
 class ErrorResponse(BaseModel):

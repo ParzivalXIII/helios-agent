@@ -82,28 +82,12 @@ def create_api_router() -> APIRouter:
             
             return response
         
-        except ValueError as e:
-            # Validation error
-            logger.warning(f"Validation error: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "error_code": "validation_error",
-                    "message": str(e),
-                    "severity_level": "error",
-                },
-            )
-        
         except Exception as e:
-            # Other errors
+            # Other unexpected errors
             logger.exception(f"Unexpected error in chat endpoint: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={
-                    "error_code": "internal_error",
-                    "message": "An unexpected error occurred.",
-                    "severity_level": "critical",
-                },
+                detail="An unexpected error occurred.",
             )
     
     # ========================================================================

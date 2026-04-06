@@ -99,22 +99,26 @@ def dict_to_agent_state(data: dict) -> AgentState:
         ValueError: If required fields are missing or data is malformed
         KeyError: If expected keys are not found
     """
-    def deserialize_datetime(value: str | None) -> datetime | None:
-        """Parse ISO 8601 UTC string back to datetime."""
+    def deserialize_datetime(value: str | datetime | None) -> datetime | None:
+        """Parse ISO 8601 UTC string or passthrough datetime back to datetime."""
         if value is None:
             return None
+        if isinstance(value, datetime):
+            return value
         if isinstance(value, str):
             # Handle both with and without trailing 'Z'
             iso_str = value.rstrip("Z")
             return datetime.fromisoformat(iso_str)
-        raise ValueError(f"Expected string or None for datetime, got {type(value)}")
+        raise ValueError(f"Expected string, datetime or None for datetime, got {type(value)}")
     
-    def deserialize_message(msg_dict: dict) -> Message:
-        """Reconstruct Message from dict."""
+    def deserialize_message(msg: dict | Message) -> Message:
+        """Reconstruct Message from dict or return if already Message."""
+        if isinstance(msg, Message):
+            return msg
         return Message(
-            role=msg_dict["role"],
-            content=msg_dict["content"],
-            created_at=deserialize_datetime(msg_dict["created_at"]),
+            role=msg["role"],
+            content=msg["content"],
+            created_at=deserialize_datetime(msg["created_at"]),
         )
     
     def deserialize_tool_call(tc_dict: dict) -> ToolCallRecord:

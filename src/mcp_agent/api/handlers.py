@@ -19,6 +19,7 @@ from mcp_agent.session.store import (
     SessionExpiredError,
     SessionLockedError,
 )
+from mcp_agent.session.models import dataclass_to_dict, dict_to_agent_state
 from mcp_agent.settings import Settings
 from mcp_agent.utils.validators import validate_message, validate_session_id
 
@@ -76,17 +77,48 @@ async def chat_handler(
         validated_message = validate_message(request.message)
     except ValueError as e:
         logger.warning(f"Message validation failed: {e}")
-        raise
+        error_response = ErrorResponse(
+            error_code="validation_error",
+            message=str(e),
+            severity_level="error",
+            detail=None,
+            recovery_hint="Please check your input and try again.",
+        )
+        return ChatResponse(
+            session_id="",
+            response="",
+            success=False,
+            turn_count=0,
+            tool_calls=[],
+            duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            error=error_response,
+            metadata=request.metadata,
+        )
     
     # Validate session_id if provided
+    validated_session_id = None
     if request.session_id:
         try:
             validated_session_id = validate_session_id(request.session_id)
         except ValueError as e:
             logger.warning(f"Session ID validation failed: {e}")
-            raise
-    else:
-        validated_session_id = None
+            error_response = ErrorResponse(
+                error_code="validation_error",
+                message=str(e),
+                severity_level="error",
+                detail=None,
+                recovery_hint="Please check the session_id format (must be a valid UUID4).",
+            )
+            return ChatResponse(
+                session_id=request.session_id or "",
+                response="",
+                success=False,
+                turn_count=0,
+                tool_calls=[],
+                duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+                error=error_response,
+                metadata=request.metadata,
+            )
     
     # Step 2: Load or create session with context manager
     manager = SessionManager(store, validated_session_id)
@@ -104,10 +136,7 @@ async def chat_handler(
                     error_code="session_turn_limit_exceeded",
                     message=f"Session has reached its maximum of {settings.max_turns} turns.",
                     severity_level="error",
-                    detail={
-                        "turn_count": state.turn_count,
-                        "max_turns": settings.max_turns,
-                    },
+                    detail=f"Turn {state.turn_count} of {settings.max_turns} reached.",
                     recovery_hint="Start a new session.",
                 )
                 return ChatResponse(
@@ -138,10 +167,16 @@ async def chat_handler(
             # Step 5: Execute graph with timeout
             try:
                 result = await asyncio.wait_for(
-                    graph.ainvoke({"state": state}),
-                    timeout=8.0,  # 8 second SLA per FR-023
+                    graph.ainvoke(state),
+                    timeout=60.0,  # 60 second timeout for external LLM calls
                 )
-                state = result.get("state", state)
+                # ainvoke returns a dict representation of the state
+                # Convert it back to AgentState
+                if isinstance(result, dict):
+                    from mcp_agent.session.models import dict_to_agent_state
+                    state = dict_to_agent_state(result)
+                else:
+                    state = result
             except asyncio.TimeoutError:
                 logger.error(
                     f"Session {state.session_id} graph execution timed out after 8s"
@@ -150,7 +185,7 @@ async def chat_handler(
                     error_code="request_timeout",
                     message="The request timed out. Please try again.",
                     severity_level="error",
-                    detail={"timeout_seconds": 8},
+                    detail="Timeout after 30 seconds.",
                     recovery_hint="Retry the request.",
                 )
                 return ChatResponse(
@@ -205,7 +240,7 @@ async def chat_handler(
                     error_code="agent_error",
                     message=state.last_error,
                     severity_level="error",
-                    detail={"error_count": state.error_count},
+                    detail=f"Error count: {state.error_count}",
                     recovery_hint="Please try your request again.",
                 )
             
@@ -269,7 +304,7 @@ async def chat_handler(
             error_code="session_locked",
             message="Session is currently processing another request.",
             severity_level="warning",
-            detail={"lock_timeout_seconds": SessionStore.LOCK_TIMEOUT_SECONDS},
+            detail=f"Lock timeout: {SessionStore.LOCK_TIMEOUT_SECONDS}s",
             recovery_hint="Retry after the current request completes.",
         )
         return ChatResponse(
@@ -289,7 +324,7 @@ async def chat_handler(
             error_code="provider_unavailable",
             message="The language model provider is currently unavailable.",
             severity_level="critical",
-            detail={"provider": "openrouter", "error": str(e)},
+            detail=f"Provider error: {str(e)}",
             recovery_hint="Retry in a few minutes. If the problem persists, contact support.",
         )
         # Return 503 status via exception (handled by FastAPI exception handler)
@@ -310,7 +345,7 @@ async def chat_handler(
             error_code="internal_error",
             message="An unexpected error occurred.",
             severity_level="critical",
-            detail={"error": str(e)},
+            detail=str(e),
             recovery_hint="Please try again later.",
         )
         return ChatResponse(

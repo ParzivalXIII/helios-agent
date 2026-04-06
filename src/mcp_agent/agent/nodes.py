@@ -48,7 +48,7 @@ async def node_think(state: AgentState, llm_client: LlmClient, settings: Setting
         )
         state.current_decision = "error"
         state.last_error = f"Maximum turns ({settings.max_turns}) exceeded"
-        return {"state": state}
+        return state
     
     # Increment turn count
     state.turn_count += 1
@@ -93,7 +93,7 @@ async def node_think(state: AgentState, llm_client: LlmClient, settings: Setting
         state.error_count += 1
         raise
     
-    return {"state": state}
+    return state
 
 
 async def node_decide_action(state: AgentState) -> dict:
@@ -133,7 +133,7 @@ async def node_decide_action(state: AgentState) -> dict:
             f"Session {state.session_id} routing to direct_response"
         )
     
-    return {"state": state}
+    return state
 
 
 async def node_invoke_tool(state: AgentState) -> dict:
@@ -218,7 +218,7 @@ async def node_direct_response(state: AgentState, llm_client: LlmClient) -> dict
         state.error_count += 1
         raise
     
-    return {"state": state}
+    return state
 
 
 async def node_error(state: AgentState) -> dict:
@@ -243,7 +243,7 @@ async def node_error(state: AgentState) -> dict:
         f"Session {state.session_id} error: {state.last_error} (count: {state.error_count})"
     )
     
-    return {"state": state}
+    return state
 
 
 async def node_respond(state: AgentState) -> dict:
@@ -290,4 +290,4 @@ async def node_respond(state: AgentState) -> dict:
         f"Messages: {len(state.messages)}"
     )
     
-    return {"state": state}
+    return state

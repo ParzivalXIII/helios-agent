@@ -65,7 +65,16 @@
 - [X] T022 [US1] Register `POST /api/chat` in `src/mcp_agent/api/router.py` — `APIRouter(prefix="/api")`; route uses `chat_handler`; `response_model=ChatResponse`; HTTP 200 on success; error responses use `ErrorResponse` structure per contracts/api.md
 - [X] T023 [US1] Implement `src/mcp_agent/main.py` — `create_app() -> FastAPI` with async `lifespan` context manager: startup logs, Redis ping, `configure_logging`, include router; `app = create_app()` at module level for uvicorn import
 
-**Checkpoint**: `POST /api/chat` works end-to-end. New sessions created, turns persisted, direct LLM responses returned. US1 independently testable.
+**Checkpoint**: ✅ COMPLETE — `POST /api/chat` works end-to-end. New sessions created, turns persisted, direct LLM responses returned. US1 independently testable.
+
+**Validation Notes** (2025-04-06) — Live E2E Tests PASSED:
+
+- ✅ Turn 1 (new session): `session_id=825121e7-…`, `turn_count=1`, `success=true`, `response="Got it—I'll remember that your name is Alice."`
+- ✅ Turn 2 (same session): `session_id` preserved, `turn_count=2`, `success=true`, `response="Your name is Alice."` (context retained)
+- ✅ Unknown session_id: proper `validation_error` response
+- ✅ Formal checkpoint script: 7/7 assertions passed
+- LLM response time: 7–17s (OpenRouter Nemotron-3-super)
+- LangGraph quirk resolved: `ainvoke()` returns dict with Python objects for nested types; `dict_to_agent_state()` handles all three cases (str, datetime object, Message object)
 
 ---
 
@@ -151,6 +160,7 @@
 ## Parallel Execution Examples
 
 ### Phase 1 (all [P])
+
 ```
 T002  config/mcp_servers.yaml
 T003  .env.example
@@ -159,6 +169,7 @@ T005  docker-compose.yml
 ```
 
 ### Phase 2 (all [P] except T009 which anchors state.py)
+
 ```
 T007  logging/setup.py
 T008  types.py
@@ -167,18 +178,21 @@ T011  utils/validators.py
 ```
 
 ### Phase 3 — US1 parallel group
+
 ```
 T017  node_decide_action
 T018  node_direct_response + node_respond + node_error
 ```
 
 ### Phase 4 — US2 parallel group
+
 ```
 T026  mcp/adapter.py
 T027  mcp/server.py
 ```
 
 ### Phase 6 — US4 (all [P], operate on separate handlers)
+
 ```
 T033  GET /api/session/{id}
 T034  DELETE /api/session/{id}

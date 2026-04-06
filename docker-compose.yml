@@ -31,7 +31,7 @@ services:
       # LLM Configuration
       - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-your-key-here}
-      - LLM_MODEL=${LLM_MODEL:-openrouter/anthropic/claude-3.5-sonnet}
+      - LLM_MODEL=${LLM_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
       
       # Redis Configuration
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
