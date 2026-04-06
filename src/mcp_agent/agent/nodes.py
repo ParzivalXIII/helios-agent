@@ -1,145 +1,22 @@
 """
-Agent graph nodes and LLM client.
+Agent graph nodes.
 
 Implements the graph nodes (think, decide_action, invoke_tool, tool_result,
-evaluate_result, direct_response, error, respond) and the LlmClient for
-communicating with the LLM provider.
+evaluate_result, direct_response, error, respond) for the LangGraph agent.
 """
 
-import httpx
 import logging
 from typing import Any
 
 from mcp_agent.agent.state import AgentState, Message
 from mcp_agent.settings import Settings
+from mcp_agent.llm import LlmClient, LLMProviderError
 
 logger = logging.getLogger(__name__)
 
 
-# Custom exceptions
-class LLMProviderError(Exception):
-    """Raised when LLM provider returns a non-200 HTTP response."""
-    pass
-
-
-class LlmClient:
-    """
-    Async HTTP client for communicating with the LLM provider.
-    
-    Wraps httpx.AsyncClient to provide a simple interface for completing
-    conversations via the LLM provider's API.
-    """
-    
-    def __init__(self, settings: Settings):
-        """
-        Initialize the LLM client.
-        
-        Args:
-            settings: Settings instance with llm_base_url and llm_model
-        """
-        self.settings = settings
-        self.client = httpx.AsyncClient(
-            base_url=settings.llm_base_url,
-            timeout=30.0,  # 30 second timeout for LLM calls
-        )
-    
-    async def complete(self, messages: list[dict]) -> str:
-        """
-        Request a completion from the LLM provider.
-        
-        Sends a list of messages to the LLM provider and returns the
-        generated response text. Uses the model specified in settings.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content' keys
-                     Format: [{"role": "user"|"assistant", "content": "..."}]
-            
-        Returns:
-            The assistant's response text
-            
-        Raises:
-            LLMProviderError: If the provider returns non-200 HTTP status
-            httpx.TimeoutException: If the request times out
-            httpx.RequestError: If the request fails for other reasons
-        """
-        try:
-            # Prepare the request payload
-            payload = {
-                "model": self.settings.llm_model,
-                "messages": messages,
-            }
-            
-            # Make the request to /chat/completions endpoint
-            response = await self.client.post(
-                "/chat/completions",
-                json=payload,
-            )
-            
-            # Check for errors
-            if response.status_code != 200:
-                error_detail = {
-                    "provider": "openrouter",  # Default provider name
-                    "http_status": response.status_code,
-                    "response_text": response.text[:500],  # First 500 chars
-                }
-                logger.error(
-                    f"LLM provider returned {response.status_code}: {response.text[:200]}"
-                )
-                raise LLMProviderError(
-                    f"LLM provider returned {response.status_code}",
-                    error_detail,
-                )
-            
-            # Parse the response
-            data = response.json()
-            
-            # Extract the assistant's message
-            # Assumes OpenAI-compatible response format:
-            # {"choices": [{"message": {"content": "..."}}]}
-            if "choices" not in data or not data["choices"]:
-                raise LLMProviderError(
-                    "Invalid LLM response format: missing choices",
-                    {"response": data},
-                )
-            
-            content = data["choices"][0].get("message", {}).get("content", "")
-            if not content:
-                raise LLMProviderError(
-                    "Invalid LLM response format: missing content",
-                    {"response": data},
-                )
-            
-            logger.debug(f"LLM responded with {len(content)} characters")
-            return content
-        
-        except httpx.TimeoutException as e:
-            logger.error(f"LLM provider request timed out: {e}")
-            raise LLMProviderError(
-                "LLM provider request timed out",
-                {"error": str(e)},
-            )
-        except httpx.RequestError as e:
-            logger.error(f"LLM provider request failed: {e}")
-            raise LLMProviderError(
-                "LLM provider request failed",
-                {"error": str(e)},
-            )
-    
-    async def aclose(self) -> None:
-        """Close the HTTP client connection."""
-        await self.client.aclose()
-    
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.aclose()
-
-
 # ============================================================================
-# Graph node implementations will go here in subsequent tasks
+# Graph node implementations
 # ============================================================================
 
 async def node_think(state: AgentState, llm_client: LlmClient, settings: Settings) -> dict:

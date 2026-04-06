@@ -12,8 +12,11 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
     # LLM Configuration
-    llm_base_url: str
-    """Base URL of the LLM provider (e.g., https://openrouter.ai/api/v1)."""
+    openrouter_base_url: str
+    """Base URL of the OpenRouter API (e.g., https://openrouter.ai/api/v1)."""
+
+    openrouter_api_key: str
+    """API key for OpenRouter authentication."""
 
     llm_model: str
     """Model identifier (e.g., 'openai/gpt-4', 'anthropic/claude-opus')."""

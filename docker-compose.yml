@@ -19,28 +19,6 @@ services:
     networks:
       - helios-network
 
-  # OpenRouter LLM API (mock/stub for local development)
-  # In production, this would be the actual OpenRouter API endpoint
-  # For local testing, replace with a mock HTTP server or remove this service
-  # and configure LLM_BASE_URL to point to the actual remote API
-  openrouter-llm:
-    image: mockserver/mockserver:latest
-    container_name: helios-llm
-    ports:
-      - "8001:1080"
-    environment:
-      MOCKSERVER_PROPERTY_FILE: /config/mockserver.properties
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:1080", "||", "exit", "1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-    networks:
-      - helios-network
-    depends_on:
-      - redis
-
   # helios-agent: Main FastAPI application
   helios-agent:
     build:
@@ -51,7 +29,8 @@ services:
       - "8000:8000"
     environment:
       # LLM Configuration
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openrouter.ai/api/v1}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-your-key-here}
       - LLM_MODEL=${LLM_MODEL:-openrouter/anthropic/claude-3.5-sonnet}
       
       # Redis Configuration
@@ -72,8 +51,6 @@ services:
       - ./config:/app/config:ro
     depends_on:
       redis:
-        condition: service_healthy
-      openrouter-llm:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health", "||", "exit", "1"]

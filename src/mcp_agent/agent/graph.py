@@ -17,7 +17,7 @@ from mcp_agent.agent.edges import (
     route_tool_result,
     route_evaluate_result,
 )
-from mcp_agent.agent.nodes import LlmClient
+from mcp_agent.llm import LlmClient
 from mcp_agent.settings import Settings
 
 logger = logging.getLogger(__name__)

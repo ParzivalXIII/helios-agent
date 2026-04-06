@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from mcp_agent.settings import Settings
 from mcp_agent.logging.setup import configure_logging
 from mcp_agent.session.store import SessionStore
-from mcp_agent.agent.nodes import LlmClient
+from mcp_agent.llm import LlmClient
 from mcp_agent.agent.graph import build_agent_graph
 from mcp_agent.api.router import create_api_router
 
