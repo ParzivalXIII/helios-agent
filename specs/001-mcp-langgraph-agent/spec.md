@@ -103,7 +103,7 @@ An operator or client application needs to inspect current session state, clear 
 - **FR-008**: The system MUST normalize discovered tool capabilities into a single internal catalog that can be used during request handling.
 - **FR-009**: The system MUST decide for each request whether to answer directly or use one or more relevant tools from the capability catalog.
 - **FR-010**: The system MUST record each tool invocation with its selected capability, request input, result, status, and execution duration.
-- **FR-011**: The system MUST support both non-blocking and sequential tool execution patterns based on each tool capability's execution constraints.
+- **FR-011**: The system MUST support sequential tool execution patterns (one tool per turn) based on each tool capability's execution constraints.
 - **FR-012**: The system MUST apply a per-tool execution timeout, with a default limit of 5 seconds unless overridden for a specific capability.
 - **FR-013**: The system MUST retry transient tool failures up to 3 times using exponential backoff with jitter: delays of 1s, 2s, and 4s with ±0-500ms random variation before declaring the primary attempt unsuccessful.
 - **FR-014**: The system MUST attempt a configured fallback capability when a primary tool fails permanently or exhausts its retry budget and a fallback option exists.
