@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "checkpoint": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:f1f8587fcfee109d13e5fd2837df498439695218b32d00083f6e98095fca64c0",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.checkpoint.commit"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-05T11:26:28.783957+00:00"
+    },
+    "fixit": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:cd7575705b5b8ad6c421840e3bd7dcf3260523b7f7709500bb16afef03515a30",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.fixit.run"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-05T11:29:48.441541+00:00"
+    },
+    "plan-review-gate": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:86dad247d74beadc50c18cbadbe730d13d4cc8370110d3082f101fe8295e3d38",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.plan-review-gate.check"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-05T11:31:12.827210+00:00"
+    },
+    "qa": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:ae004b14dc6b480ed50acf7608d14223dbd83ceba6b05582cdd742cb9301c334",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.qa.run"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-05T11:31:52.377817+00:00"
+    },
+    "v-model": {
+      "version": "0.4.0",
+      "source": "local",
+      "manifest_hash": "sha256:e5ccf200a7438e52c408fe6ec02606627de2311089f932dcd17b3760c46d29ea",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.v-model.requirements",
+          "speckit.v-model.acceptance",
+          "speckit.v-model.system-design",
+          "speckit.v-model.system-test",
+          "speckit.v-model.architecture-design",
+          "speckit.v-model.integration-test",
+          "speckit.v-model.module-design",
+          "speckit.v-model.unit-test",
+          "speckit.v-model.trace"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-05T11:36:47.175740+00:00"
+    },
+    "verify": {
+      "version": "1.0.3",
+      "source": "local",
+      "manifest_hash": "sha256:74202b2c3bb17058b10787838cdf30c9ebe11e8793fc1de04bee75d5f111949a",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.verify.run"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-05T11:39:51.574320+00:00"
+    }
+  }
+}

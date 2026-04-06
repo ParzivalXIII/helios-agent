@@ -1,0 +1,36 @@
+installed: []
+settings:
+  auto_execute_hooks: true
+hooks:
+  before_tasks:
+  - extension: plan-review-gate
+    command: speckit.plan-review-gate.check
+    enabled: true
+    optional: false
+    prompt: Execute speckit.plan-review-gate.check?
+    description: Require a merge request before proceeding to task generation
+    condition: null
+  after_implement:
+  - extension: qa
+    command: speckit.qa.run
+    enabled: true
+    optional: true
+    prompt: Run QA testing?
+    description: Validates acceptance criteria through browser-driven or CLI-based
+      testing
+    condition: null
+  - extension: verify
+    command: speckit.verify.run
+    enabled: true
+    optional: true
+    prompt: Run verify to validate implementation against specification?
+    description: Post-implementation verification gate
+    condition: null
+  after_tasks:
+  - extension: v-model
+    command: speckit.v-model.trace
+    enabled: true
+    optional: true
+    prompt: Run traceability matrix to validate requirement coverage?
+    description: Builds the traceability matrix after tasks are generated
+    condition: null
