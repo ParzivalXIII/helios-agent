@@ -35,12 +35,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Implement `src/mcp_agent/settings.py` — Pydantic `BaseSettings` class loading all env vars from `.env.example` with type annotations and field defaults (`LLM_BASE_URL`, `LLM_MODEL`, `REDIS_URL`, `MAX_TURNS=5`, `SESSION_TTL_SECONDS=3600`, `TOOL_TIMEOUT_MS=5000`, `LOG_LEVEL="INFO"`, `MCP_CONFIG_PATH`)
-- [ ] T007 [P] Implement `src/mcp_agent/logging/setup.py` — `configure_logging(settings)` function using loguru: JSON sink to stdout, `logger.bind(session_id=..., node=...)` pattern, log level from settings
-- [ ] T008 [P] Implement `src/mcp_agent/types.py` — type aliases: `SessionId = str`, `ToolId = str`, `AgentDecision = Literal["use_tool", "direct_response", "error"]`
-- [ ] T009 Implement `src/mcp_agent/agent/state.py` — `@dataclass AgentState`, `@dataclass Message`, `@dataclass ToolCallRecord` matching exact schema in [data-model.md](data-model.md) (session_id, created_at, last_activity, messages, turn_count, current_input, current_thought, current_decision, selected_tool_id, tool_calls_this_turn, current_tool_output, last_error, error_count, available_tools, metadata); use `field(default_factory=...)` for mutable defaults; add comprehensive field-level docstrings
-- [ ] T010 [P] Implement `src/mcp_agent/api/models.py` — Pydantic models: `ChatRequest`, `ChatResponse`, `ErrorResponse` (with `error_code`, `message`, `severity_level`, `detail`, `recovery_hint`), `HealthResponse`, `SessionModel`, `ToolCallSummary` per contracts/api.md schemas
-- [ ] T011 [P] Implement `src/mcp_agent/utils/validators.py` — `validate_session_id(value: str) -> str` (UUID4 regex check, raises `ValueError`), `validate_message(value: str) -> str` (1–4096 chars, raises `ValueError`)
+- [X] T006 Implement `src/mcp_agent/settings.py` — Pydantic `BaseSettings` class loading all env vars from `.env.example` with type annotations and field defaults (`LLM_BASE_URL`, `LLM_MODEL`, `REDIS_URL`, `MAX_TURNS=5`, `SESSION_TTL_SECONDS=3600`, `TOOL_TIMEOUT_MS=5000`, `LOG_LEVEL="INFO"`, `MCP_CONFIG_PATH`)
+- [X] T007 [P] Implement `src/mcp_agent/logging/setup.py` — `configure_logging(settings)` function using loguru: JSON sink to stdout, `logger.bind(session_id=..., node=...)` pattern, log level from settings
+- [X] T008 [P] Implement `src/mcp_agent/types.py` — type aliases: `SessionId = str`, `ToolId = str`, `AgentDecision = Literal["use_tool", "direct_response", "error"]`
+- [X] T009 Implement `src/mcp_agent/agent/state.py` — `@dataclass AgentState`, `@dataclass Message`, `@dataclass ToolCallRecord` matching exact schema in [data-model.md](data-model.md) (session_id, created_at, last_activity, messages, turn_count, current_input, current_thought, current_decision, selected_tool_id, tool_calls_this_turn, current_tool_output, last_error, error_count, available_tools, metadata); use `field(default_factory=...)` for mutable defaults; add comprehensive field-level docstrings
+- [X] T010 [P] Implement `src/mcp_agent/api/models.py` — Pydantic models: `ChatRequest`, `ChatResponse`, `ErrorResponse` (with `error_code`, `message`, `severity_level`, `detail`, `recovery_hint`), `HealthResponse`, `SessionModel`, `ToolCallSummary` per contracts/api.md schemas
+- [X] T011 [P] Implement `src/mcp_agent/utils/validators.py` — `validate_session_id(value: str) -> str` (UUID4 regex check, raises `ValueError`), `validate_message(value: str) -> str` (1–4096 chars, raises `ValueError`)
 
 **Checkpoint**: Foundation ready — all shared data types, config, and utilities exist for story implementation.
 
