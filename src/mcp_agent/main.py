@@ -17,6 +17,7 @@ from mcp_agent.session.store import SessionStore
 from mcp_agent.llm import LlmClient
 from mcp_agent.agent.graph import build_agent_graph
 from mcp_agent.api.router import create_api_router
+from mcp_agent.mcp.aggregator import MCPAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,8 @@ async def lifespan(app: FastAPI):
     - Configure logging
     - Connect to Redis
     - Create LLM client
-    - Build agent graph
+    - Discover MCP tools and build tool registry
+    - Build agent graph with tool context
     - Store in app.state for handlers
     
     Shutdown:
@@ -78,6 +80,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize LLM client: {e}")
         raise
     
+    # Discover MCP tools (T029 addition)
+    tool_registry = None
+    try:
+        logger.info("Discovering MCP tools from configured servers...")
+        aggregator = MCPAggregator(settings)
+        tool_registry = await aggregator.discover_all()
+        tool_count = tool_registry.count()
+        logger.info(f"✓ MCP discovery complete: {tool_count} tools registered")
+    except Exception as e:
+        logger.error(f"MCP tool discovery failed: {e}")
+        # Continue startup but log warning - agent can operate without tools
+        logger.warning("Agent will operate without tool support")
+        from mcp_agent.mcp.registry import ToolRegistry
+        tool_registry = ToolRegistry()
+    
     # Build agent graph
     try:
         agent_graph = build_agent_graph(llm_client, settings)
@@ -91,6 +108,7 @@ async def lifespan(app: FastAPI):
     app.state.session_store = session_store
     app.state.llm_client = llm_client
     app.state.agent_graph = agent_graph
+    app.state.tool_registry = tool_registry  # T029 addition
     
     logger.info("✓ MCP Agent service started successfully")
     

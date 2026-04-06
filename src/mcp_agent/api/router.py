@@ -60,19 +60,21 @@ def create_api_router() -> APIRouter:
             HTTPException: For validation errors, session errors, or timeouts
         """
         try:
-            # Get dependencies from app state
+            # Get dependencies from app state (T030: Add tool_registry)
             store = request.app.state.session_store
             llm_client = request.app.state.llm_client
             graph = request.app.state.agent_graph
             settings = request.app.state.settings
+            tool_registry = getattr(request.app.state, "tool_registry", None)  # T030: Tool registry
             
-            # Call handler
+            # Call handler (T030: Pass tool_registry)
             response = await chat_handler(
                 request=request_body,
                 store=store,
                 llm_client=llm_client,
                 graph=graph,
                 settings=settings,
+                tool_registry=tool_registry,  # T030: Pass tool registry
             )
             
             logger.info(

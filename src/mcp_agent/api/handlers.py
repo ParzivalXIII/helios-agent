@@ -32,6 +32,7 @@ async def chat_handler(
     llm_client: LlmClient,
     graph,  # CompiledGraph
     settings: Settings,
+    tool_registry=None,  # T030: Tool registry for tool-aware execution
 ) -> ChatResponse:
     """
     Handle a chat message request and return an agent response.
@@ -41,8 +42,9 @@ async def chat_handler(
     2. Use SessionManager context manager to load/create/lock session
     3. Add user message to session conversation
     4. Wrap graph.ainvoke() in asyncio.wait_for(timeout=8.0) for SLA
-    5. Save updated state via SessionStore
-    6. Build and return ChatResponse
+    5. Inject tool_registry into graph context (T030 addition)
+    6. Save updated state via SessionStore
+    7. Build and return ChatResponse
     
     Handles all error cases:
     - validation_error → ValueError from validators
@@ -60,6 +62,7 @@ async def chat_handler(
         llm_client: LlmClient for LLM communication
         graph: Compiled LangGraph agent graph
         settings: Settings instance with configuration
+        tool_registry: ToolRegistry for tool-aware decisions (T030 addition)
         
     Returns:
         ChatResponse with agent response and metadata
@@ -166,8 +169,13 @@ async def chat_handler(
             
             # Step 5: Execute graph with timeout
             try:
+                # T030: Pass tool_registry to graph execution for tool-aware decisions
+                graph_config = {}
+                if tool_registry:
+                    graph_config["tool_registry"] = tool_registry
+                
                 result = await asyncio.wait_for(
-                    graph.ainvoke(state),
+                    graph.ainvoke(state, config=graph_config) if graph_config else graph.ainvoke(state),
                     timeout=60.0,  # 60 second timeout for external LLM calls
                 )
                 # ainvoke returns a dict representation of the state

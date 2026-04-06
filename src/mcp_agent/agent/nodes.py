@@ -136,31 +136,154 @@ async def node_decide_action(state: AgentState) -> dict:
     return state
 
 
-async def node_invoke_tool(state: AgentState) -> dict:
+async def node_invoke_tool(state: AgentState, executor: Any = None) -> dict:
     """
     Tool invocation node: executes the selected tool.
     
-    This is a placeholder that will be implemented in Phase 4 (T028).
+    Process:
+    1. Resolve state.selected_tool_id from the tool registry
+    2. Execute tool via ToolExecutor with timeout and retry support
+    3. Append ToolCallRecord to state.tool_calls_this_turn
+    4. Store result in state.current_tool_output
+    5. Route to node_tool_result
+    
+    Args:
+        state: Current agent state.
+        executor: ToolExecutor instance (injected from context).
+        
+    Returns:
+        Updated state dictionary with tool execution record.
     """
-    raise NotImplementedError("node_invoke_tool will be implemented in Phase 4")
+    if not executor or not state.selected_tool_id:
+        logger.error("node_invoke_tool: Missing executor or selected_tool_id")
+        state.current_tool_output = None
+        state.last_error = "Tool execution failed: executor not available"
+        return {"state": state}
+    
+    try:
+        # Execute the tool with retry and fallback support
+        tool_record = await executor.execute(
+            state.selected_tool_id,
+            state.metadata.get("tool_arguments", {})
+        )
+        
+        # Append to tool call history
+        state.tool_calls_this_turn.append(tool_record)
+        
+        # Store output for next node
+        state.current_tool_output = tool_record.output if tool_record.status == "success" else None
+        
+        if tool_record.status != "success":
+            state.last_error = tool_record.error or "Tool execution failed"
+            state.error_count += 1
+        
+        logger.info(f"Tool executed: {state.selected_tool_id}, status={tool_record.status}")
+        
+    except Exception as e:
+        logger.error(f"Tool invocation error: {e}")
+        state.last_error = str(e)
+        state.error_count += 1
+        state.current_tool_output = None
+    
+    return {"state": state}
 
 
 async def node_tool_result(state: AgentState) -> dict:
     """
-    Tool result node: processes tool output.
+    Tool result node: processes tool output and prepares for evaluation.
     
-    This is a placeholder that will be implemented in Phase 4 (T028).
+    Process:
+    1. Append tool output as a "tool" message to conversation history
+    2. Store raw output in state.current_tool_output for next node
+    3. Update turn metadata with tool call summary
+    
+    Args:
+        state: Current agent state with tool execution result.
+        
+    Returns:
+        Updated state dictionary with tool output added to history.
     """
-    raise NotImplementedError("node_tool_result will be implemented in Phase 4")
+    try:
+        # Add tool result to conversation history
+        if state.current_tool_output is not None:
+            # Get the most recent tool call
+            if state.tool_calls_this_turn:
+                last_tool = state.tool_calls_this_turn[-1]
+                tool_message = Message(
+                    role="tool",
+                    content=str(state.current_tool_output),
+                    created_at=state.last_activity
+                )
+                state.messages.append(tool_message)
+                logger.debug(f"Tool result added to conversation: {last_tool.tool_id}")
+        
+        # If tool call failed, prepare error context
+        elif state.last_error:
+            error_message = Message(
+                role="tool",
+                content=f"Error: {state.last_error}",
+                created_at=state.last_activity
+            )
+            state.messages.append(error_message)
+            logger.warning(f"Tool error recorded in conversation: {state.last_error}")
+    
+    except Exception as e:
+        logger.error(f"Error in node_tool_result: {e}")
+        state.last_error = str(e)
+    
+    return {"state": state}
 
 
-async def node_evaluate_result(state: AgentState) -> dict:
+async def node_evaluate_result(state: AgentState, llm_client: LlmClient) -> dict:
     """
-    Result evaluation node: synthesizes answer from tool output.
+    Result evaluation node: synthesizes final answer from tool output.
     
-    This is a placeholder that will be implemented in Phase 4 (T028).
+    Process:
+    1. Call LLMClient.complete() with full conversation history including tool output
+    2. Generate synthesized answer grounding the response in the tool output
+    3. Store answer in state for final response packaging
+    
+    Args:
+        state: Current agent state with tool output in conversation history.
+        llm_client: LLM client for generating the synthesis response.
+        
+    Returns:
+        Updated state dictionary with final synthesized answer.
     """
-    raise NotImplementedError("node_evaluate_result will be implemented in Phase 4")
+    try:
+        # Build message context including tool output
+        messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in state.messages[-10:]  # Use last 10 messages for context
+        ]
+        
+        # Add instruction to synthesize answer from tool output
+        synthesis_prompt = {
+            "role": "user",
+            "content": "Based on the tool output above, provide a clear and helpful answer to the original question."
+        }
+        messages.append(synthesis_prompt)
+        
+        logger.debug(f"Evaluating tool result for turn {state.turn_count}")
+        
+        # Get LLM synthesis
+        synthesis = await llm_client.complete(messages)
+        
+        state.current_thought = synthesis
+        
+        logger.info(f"Tool result evaluated, synthesis generated for turn {state.turn_count}")
+        
+    except LLMProviderError as e:
+        logger.error(f"LLM error in evaluate_result: {e}")
+        state.last_error = f"Failed to evaluate tool result: {e.detail}"
+        state.error_count += 1
+        state.current_thought = ""
+    except Exception as e:
+        logger.error(f"Unexpected error in node_evaluate_result: {e}")
+        state.last_error = str(e)
+        state.error_count += 1
+    
+    return {"state": state}
 
 
 async def node_direct_response(state: AgentState, llm_client: LlmClient) -> dict:
