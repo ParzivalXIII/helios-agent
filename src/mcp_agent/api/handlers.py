@@ -1,0 +1,325 @@
+"""
+API request handlers for the MCP Agent service.
+
+Implements business logic for chat, session management, health checks,
+and diagnostic endpoints.
+"""
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+
+from mcp_agent.agent.state import AgentState, Message
+from mcp_agent.agent.nodes import LlmClient, LLMProviderError
+from mcp_agent.api.models import ChatRequest, ChatResponse, ErrorResponse, ToolCallSummary
+from mcp_agent.session.manager import SessionManager
+from mcp_agent.session.store import (
+    SessionStore,
+    SessionNotFoundError,
+    SessionExpiredError,
+    SessionLockedError,
+)
+from mcp_agent.settings import Settings
+from mcp_agent.utils.validators import validate_message, validate_session_id
+
+logger = logging.getLogger(__name__)
+
+
+async def chat_handler(
+    request: ChatRequest,
+    store: SessionStore,
+    llm_client: LlmClient,
+    graph,  # CompiledGraph
+    settings: Settings,
+) -> ChatResponse:
+    """
+    Handle a chat message request and return an agent response.
+    
+    Process:
+    1. Validate request via validate_message/validate_session_id
+    2. Use SessionManager context manager to load/create/lock session
+    3. Add user message to session conversation
+    4. Wrap graph.ainvoke() in asyncio.wait_for(timeout=8.0) for SLA
+    5. Save updated state via SessionStore
+    6. Build and return ChatResponse
+    
+    Handles all error cases:
+    - validation_error → ValueError from validators
+    - session_not_found → SessionNotFoundError
+    - session_expired → SessionExpiredError
+    - session_locked → SessionLockedError (409)
+    - session_turn_limit_exceeded → Turn count >= max_turns
+    - provider_unavailable → Non-200 LLM response (503)
+    - provider_timeout → LLM timeout (504)
+    - TimeoutError → asyncio.wait_for timeout (408)
+    
+    Args:
+        request: ChatRequest with message and optional session_id
+        store: SessionStore for Redis operations
+        llm_client: LlmClient for LLM communication
+        graph: Compiled LangGraph agent graph
+        settings: Settings instance with configuration
+        
+    Returns:
+        ChatResponse with agent response and metadata
+        
+    Raises:
+        ValueError: If validation fails
+        SessionNotFoundError: If session not found
+        SessionExpiredError: If session expired
+        SessionLockedError: If session is locked
+    """
+    start_time = datetime.now(timezone.utc)
+    
+    # Step 1: Validate request
+    try:
+        validated_message = validate_message(request.message)
+    except ValueError as e:
+        logger.warning(f"Message validation failed: {e}")
+        raise
+    
+    # Validate session_id if provided
+    if request.session_id:
+        try:
+            validated_session_id = validate_session_id(request.session_id)
+        except ValueError as e:
+            logger.warning(f"Session ID validation failed: {e}")
+            raise
+    else:
+        validated_session_id = None
+    
+    # Step 2: Load or create session with context manager
+    manager = SessionManager(store, validated_session_id)
+    
+    try:
+        async with manager as state:
+            # Step 3: Check turn limit BEFORE executing
+            if state.turn_count >= settings.max_turns:
+                logger.warning(
+                    f"Session {state.session_id} has exceeded max_turns "
+                    f"({state.turn_count}/{settings.max_turns})"
+                )
+                # Return error response without executing graph
+                error_response = ErrorResponse(
+                    error_code="session_turn_limit_exceeded",
+                    message=f"Session has reached its maximum of {settings.max_turns} turns.",
+                    severity_level="error",
+                    detail={
+                        "turn_count": state.turn_count,
+                        "max_turns": settings.max_turns,
+                    },
+                    recovery_hint="Start a new session.",
+                )
+                return ChatResponse(
+                    session_id=state.session_id,
+                    response="",
+                    success=False,
+                    turn_count=state.turn_count,
+                    tool_calls=[],
+                    duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+                    error=error_response,
+                    metadata=request.metadata,
+                )
+            
+            # Step 4: Add user message to conversation
+            user_message = Message(
+                role="user",
+                content=validated_message,
+                created_at=datetime.now(timezone.utc),
+            )
+            state.messages.append(user_message)
+            state.current_input = validated_message
+            
+            logger.info(
+                f"Session {state.session_id} turn {state.turn_count + 1}: "
+                f"User message: {validated_message[:50]}..."
+            )
+            
+            # Step 5: Execute graph with timeout
+            try:
+                result = await asyncio.wait_for(
+                    graph.ainvoke({"state": state}),
+                    timeout=8.0,  # 8 second SLA per FR-023
+                )
+                state = result.get("state", state)
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Session {state.session_id} graph execution timed out after 8s"
+                )
+                error_response = ErrorResponse(
+                    error_code="request_timeout",
+                    message="The request timed out. Please try again.",
+                    severity_level="error",
+                    detail={"timeout_seconds": 8},
+                    recovery_hint="Retry the request.",
+                )
+                return ChatResponse(
+                    session_id=state.session_id,
+                    response="",
+                    success=False,
+                    turn_count=state.turn_count,
+                    tool_calls=[],
+                    duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+                    error=error_response,
+                    metadata=request.metadata,
+                )
+            
+            # Step 6: Save updated state
+            await store.set(
+                state.session_id,
+                state,
+                ttl=settings.session_ttl_seconds,
+            )
+            
+            logger.info(
+                f"Session {state.session_id} turn {state.turn_count} completed. "
+                f"Saved to Redis."
+            )
+            
+            # Step 7: Build ChatResponse
+            # Determine success/failure
+            success = state.current_decision != "error"
+            
+            # Extract response content
+            if state.messages:
+                last_message = state.messages[-1]
+                response_content = last_message.content if last_message.role == "assistant" else ""
+            else:
+                response_content = ""
+            
+            # Build tool calls summary (for now, empty for US1)
+            tool_calls_summary = [
+                ToolCallSummary(
+                    tool_id=tc.tool_id,
+                    status=tc.status,
+                    duration_ms=tc.duration_ms,
+                    fallback_used=tc.fallback_used if tc.fallback_used else None,
+                )
+                for tc in state.tool_calls_this_turn
+            ]
+            
+            # Build error response if needed
+            error_response = None
+            if not success and state.last_error:
+                error_response = ErrorResponse(
+                    error_code="agent_error",
+                    message=state.last_error,
+                    severity_level="error",
+                    detail={"error_count": state.error_count},
+                    recovery_hint="Please try your request again.",
+                )
+            
+            # Calculate duration
+            duration_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            
+            return ChatResponse(
+                session_id=state.session_id,
+                response=response_content,
+                success=success,
+                turn_count=state.turn_count,
+                tool_calls=tool_calls_summary,
+                duration_ms=duration_ms,
+                error=error_response,
+                metadata=request.metadata,
+            )
+    
+    except SessionNotFoundError as e:
+        logger.warning(f"Session not found: {e}")
+        error_response = ErrorResponse(
+            error_code="session_not_found",
+            message="Session was not found.",
+            severity_level="warning",
+            detail=None,
+            recovery_hint="Omit session_id to start a new session.",
+        )
+        return ChatResponse(
+            session_id=validated_session_id or "unknown",
+            response="",
+            success=False,
+            turn_count=0,
+            tool_calls=[],
+            duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            error=error_response,
+            metadata=request.metadata,
+        )
+    
+    except SessionExpiredError as e:
+        logger.warning(f"Session expired: {e}")
+        error_response = ErrorResponse(
+            error_code="session_expired",
+            message="Session has expired.",
+            severity_level="warning",
+            detail=None,
+            recovery_hint="Omit session_id to start a new session.",
+        )
+        return ChatResponse(
+            session_id=validated_session_id or "unknown",
+            response="",
+            success=False,
+            turn_count=0,
+            tool_calls=[],
+            duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            error=error_response,
+            metadata=request.metadata,
+        )
+    
+    except SessionLockedError as e:
+        logger.warning(f"Session locked: {e}")
+        error_response = ErrorResponse(
+            error_code="session_locked",
+            message="Session is currently processing another request.",
+            severity_level="warning",
+            detail={"lock_timeout_seconds": SessionStore.LOCK_TIMEOUT_SECONDS},
+            recovery_hint="Retry after the current request completes.",
+        )
+        return ChatResponse(
+            session_id=validated_session_id or "unknown",
+            response="",
+            success=False,
+            turn_count=0,
+            tool_calls=[],
+            duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            error=error_response,
+            metadata=request.metadata,
+        )
+    
+    except LLMProviderError as e:
+        logger.error(f"LLM provider error: {e}")
+        error_response = ErrorResponse(
+            error_code="provider_unavailable",
+            message="The language model provider is currently unavailable.",
+            severity_level="critical",
+            detail={"provider": "openrouter", "error": str(e)},
+            recovery_hint="Retry in a few minutes. If the problem persists, contact support.",
+        )
+        # Return 503 status via exception (handled by FastAPI exception handler)
+        return ChatResponse(
+            session_id=validated_session_id or "unknown",
+            response="",
+            success=False,
+            turn_count=0,
+            tool_calls=[],
+            duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            error=error_response,
+            metadata=request.metadata,
+        )
+    
+    except Exception as e:
+        logger.exception(f"Unexpected error in chat handler: {e}")
+        error_response = ErrorResponse(
+            error_code="internal_error",
+            message="An unexpected error occurred.",
+            severity_level="critical",
+            detail={"error": str(e)},
+            recovery_hint="Please try again later.",
+        )
+        return ChatResponse(
+            session_id=validated_session_id or "unknown",
+            response="",
+            success=False,
+            turn_count=0,
+            tool_calls=[],
+            duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            error=error_response,
+            metadata=request.metadata,
+        )
