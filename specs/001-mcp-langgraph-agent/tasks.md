@@ -103,7 +103,7 @@
 **Independent Test**: Patch `ToolExecutor` to raise a transient error twice then succeed → verify response has `turn_count=1` and succeeded. Patch to always fail with a fallback configured → verify fallback tool invoked. Patch fallback to also fail → verify `error_code: "tool_execution_failed"` in response.
 
 - [X] T031 [US3] Implement `src/mcp_agent/mcp/executors.py` — `ToolExecutionResult` dataclass (tool_id, success, output, error, attempt_count, duration_ms, fallback_used); `ToolExecutor` class: `async def execute(tool_def: ToolDefinition, input: dict, registry: ToolRegistry) -> ToolExecutionResult`; enforces `TOOL_TIMEOUT_MS` via `asyncio.wait_for`; retry loop: `max_attempts=3`, delay formula `2**attempt + random.uniform(0, 0.5)` capped at 10s; on permanent failure checks `tool_def.fallback_tool_id` and recursively executes fallback (max 1 fallback level); populates `ToolExecutionResult` with attempt count and fallback flag
-- [ ] T032 [US3] Update `node_invoke_tool` in `src/mcp_agent/agent/nodes.py` to delegate all execution to `ToolExecutor.execute()` instead of calling the tool directly; store `ToolExecutionResult` fields in `ToolCallRecord` appended to `state.tool_calls_this_turn`
+- [X] T032 [US3] Update `node_invoke_tool` in `src/mcp_agent/agent/nodes.py` to delegate all execution to `ToolExecutor.execute()` instead of calling the tool directly; store `ToolExecutionResult` fields in `ToolCallRecord` appended to `state.tool_calls_this_turn`
 
 **Checkpoint**: Recovery behavior complete. Retry, fallback, and clean failure paths all handled. US3 independently testable by mocking `ToolExecutor`.
 
