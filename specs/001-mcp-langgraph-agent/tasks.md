@@ -115,11 +115,11 @@
 
 **Independent Test**: `GET /api/session/{id}` → 200 with session summary. `DELETE /api/session/{id}` → 200. `GET /api/session/{id}` → 404. `GET /api/health` → 200 with `status: "healthy"`. `GET /api/debug/metrics` → 200 with non-null counters.
 
-- [ ] T033 [P] [US4] Implement `GET /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.get()`, returns `SessionModel` (id, turn_count, messages, last_activity, state); 404 with `error_code: "session_not_found"` if missing
-- [ ] T034 [P] [US4] Implement `DELETE /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.delete()`, idempotent (200 even if session did not exist per contracts/api.md)
-- [ ] T035 [P] [US4] Implement `GET /api/health` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — pings Redis (`redis.ping()`), pings LLM provider via `LlmClient`; returns `HealthResponse` with `status: "healthy"|"degraded"|"unhealthy"`, per-dependency status, tool count from `tool_registry`; HTTP 200 for healthy/degraded, 503 for unhealthy
-- [ ] T036 [P] [US4] Implement `GET /api/debug/trace/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads structured log records bound with `session_id=` from an in-memory `TraceBuffer` (ring buffer populated by loguru sink); returns ordered list of trace events; 404 if no records found for session
-- [ ] T037 [P] [US4] Implement `GET /api/debug/metrics` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads from `MetricsStore` (thread-safe in-process counters populated by chat_handler and ToolExecutor): `total_sessions`, `total_turns`, `tool_calls`, `tool_failures`, `llm_invocations`, `avg_duration_ms`; initialize `MetricsStore` in `app.state` during lifespan startup
+- [X] T033 [P] [US4] Implement `GET /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.get()`, returns `SessionModel` (id, turn_count, messages, last_activity, state); 404 with `error_code: "session_not_found"` if missing
+- [X] T034 [P] [US4] Implement `DELETE /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.delete()`, idempotent (200 even if session did not exist per contracts/api.md)
+- [X] T035 [P] [US4] Implement `GET /api/health` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — pings Redis (`redis.ping()`), pings LLM provider via `LlmClient`; returns `HealthResponse` with `status: "healthy"|"degraded"|"unhealthy"`, per-dependency status, tool count from `tool_registry`; HTTP 200 for healthy/degraded, 503 for unhealthy
+- [X] T036 [P] [US4] Implement `GET /api/debug/trace/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads structured log records bound with `session_id=` from an in-memory `TraceBuffer` (ring buffer populated by loguru sink); returns ordered list of trace events; 404 if no records found for session
+- [X] T037 [P] [US4] Implement `GET /api/debug/metrics` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads from `MetricsStore` (thread-safe in-process counters populated by chat_handler and ToolExecutor): `total_sessions`, `total_turns`, `tool_calls`, `tool_failures`, `llm_invocations`, `avg_duration_ms`; initialize `MetricsStore` in `app.state` during lifespan startup
 
 **Checkpoint**: All 6 REST endpoints implemented. Full operator visibility in place. US4 independently testable.
 
@@ -129,8 +129,8 @@
 
 **Purpose**: Configuration quality, type safety gate, and import smoke-test.
 
-- [ ] T038 [P] Add `[tool.pyright]` strict settings and `[tool.pytest.ini_options]` with `testpaths`, `asyncio_mode = "auto"`, and `markers` to `pyproject.toml`
-- [ ] T039 [P] Verify `src/mcp_agent` is importable: `uv run python -c "from mcp_agent.main import create_app; print('OK')"` must succeed (fix any import-time errors)
+- [X] T038 [P] Add `[tool.pyright]` strict settings and `[tool.pytest.ini_options]` with `testpaths`, `asyncio_mode = "auto"`, and `markers` to `pyproject.toml`
+- [X] T039 [P] Verify `src/mcp_agent` is importable: `uv run python -c "from mcp_agent.main import create_app; print('OK')"` must succeed (fix any import-time errors)
 
 ---
 

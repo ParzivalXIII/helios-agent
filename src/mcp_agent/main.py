@@ -18,6 +18,8 @@ from mcp_agent.llm import LlmClient
 from mcp_agent.agent.graph import build_agent_graph
 from mcp_agent.api.router import create_api_router
 from mcp_agent.mcp.aggregator import MCPAggregator
+from mcp_agent.debug.trace import TraceBuffer
+from mcp_agent.debug.metrics import MetricsStore
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,14 @@ async def lifespan(app: FastAPI):
     # Configure logging
     configure_logging(settings)
     logger.info(f"Logging configured: level={settings.log_level}")
+    
+    # Initialize metrics store (T037)
+    metrics_store = MetricsStore()
+    logger.info("Metrics store initialized")
+    
+    # Initialize trace buffer (T036)
+    trace_buffer = TraceBuffer()
+    logger.info("Trace buffer initialized")
     
     # Connect to Redis
     try:
@@ -109,6 +119,8 @@ async def lifespan(app: FastAPI):
     app.state.llm_client = llm_client
     app.state.agent_graph = agent_graph
     app.state.tool_registry = tool_registry  # T029 addition
+    app.state.metrics_store = metrics_store  # T037: Metrics store
+    app.state.trace_buffer = trace_buffer    # T036: Trace buffer
     
     logger.info("✓ MCP Agent service started successfully")
     

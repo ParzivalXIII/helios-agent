@@ -2,6 +2,17 @@
 
 A multi-turn LLM agent with MCP (Model Context Protocol) server integration, LangGraph orchestration, OpenRouter backend, and Redis-backed sessions.
 
+## Quick commands (copy-paste)
+
+- Install dependencies (recommended):
+  - `uv sync` (installs into .venv from pyproject.toml / uv.lock)
+  - `uv sync --no-editable` (non-editable installs for CI/build)
+- Activate venv: `source .venv/bin/activate`
+- Run single pytest test function or file:
+  - `pytest tests/test_agent.py` (single file)
+  - `pytest tests/test_agent.py::test_function_name` (single test)
+- Run type check: `pyright src/`
+
 ## Build & Run
 
 **Prerequisites:** Python 3.12, UV, Docker & Docker Compose
@@ -20,18 +31,24 @@ cp .env.example .env
 # Edit .env with your OpenRouter API key and settings
 ```
 
-**Run with Docker Compose (recommended):**
+**Run locally (requires Redis running separately):**
+
 ```bash
-docker-compose up
-# Service runs on http://localhost:8000
-# Redis on localhost:6379
-# Health check: curl http://localhost:8000/api/health
+# Start a local Redis in another terminal
+redis-server
+
+# Run the FastAPI app (reload for dev)
+uvicorn mcp_agent.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Run locally (requires Redis running separately):**
+Notes: ensure `REDIS_URL` in `.env` points to your Redis instance (default redis://localhost:6379/0).
+
+**Run with Docker Compose (recommended):**
+
 ```bash
-redis-server  # in another terminal
-uvicorn mcp_agent.main:app --host 0.0.0.0 --port 8000 --reload
+docker-compose up --build --remove-orphans
+# Follow logs: docker-compose logs -f helios-agent
+# Stop: docker-compose down
 ```
 
 ## Testing
@@ -40,128 +57,75 @@ uvicorn mcp_agent.main:app --host 0.0.0.0 --port 8000 --reload
 # Run all tests
 pytest
 
-# Run single test file
+# Run a single test file
 pytest tests/test_agent.py
+
+# Run a single test function in-file
+pytest tests/test_agent.py::test_function_name
 
 # Run with coverage
 pytest --cov=src/mcp_agent
 
-# Run async tests with verbose output
+# Verbose async tests
 pytest -v -s tests/
 ```
 
-Dependencies: `pytest>=9.0.2`, `pytest-asyncio>=1.3.0`
+Dev dependencies: `pytest>=9.0.2`, `pytest-asyncio>=1.3.0` (see pyproject.toml)
 
-## Code Style & Linting
+## Linting & Type checking
 
-**Type checking with Pyright:**
-```bash
-pyright src/
-```
+- Type checking: `pyright src/` (project uses Pyright via dev deps)
+- Formatting/lint: follow PEP 8 and project type-hinting conventions. Use your preferred formatter (`ruff`/`black`) if present.
 
-**Format & lint:** Project uses standard Python conventions. Follow PEP 8, use type hints throughout, and keep functions focused.
+## Architecture (high-level)
 
-## Architecture
+- FastAPI app exposes the agent API and health endpoints (`mcp_agent.main`, `mcp_agent/api/`)
+- Redis-backed session store holds conversation state, tool call records, and agent metadata (`mcp_agent/session/`)
+- Agent decision & orchestration layer uses LangGraph and dataclass-based AgentState to route messages, call tools, and persist turns (`mcp_agent/agent/`)
+- MCP (Model Context Protocol) servers provide tool integrations (stdio, SSE, FastMCP). Tools are discovered at startup and routed via a ToolRegistry (`mcp_agent/mcp/`)
+- Structured JSON logging (loguru) is used with session/node context binding for observability
 
-### High-Level Flow
+## Key components & entrypoints
 
-1. **API Entry Point** (`mcp_agent/api/models.py`): FastAPI receives chat requests with `session_id` and `message`
-2. **Session Management** (`mcp_agent/session/`): Redis stores ephemeral session state with TTL (default 1 hour)
-3. **Agent State** (`mcp_agent/agent/state.py`): Dataclasses for conversation history, tool calls, and agent decisions
-4. **LangGraph Orchestration**: Multi-turn loop with conditional routing:
-   - Analyze user message → decide: use tool, direct response, or error handling
-   - Tool execution with retry & fallback (if primary tool fails)
-   - Generate LLM response, persist to session, return to user
-5. **MCP Server Integration** (`mcp_agent/mcp/`): Discover and route to multiple MCP servers (stdio, SSE, FastMCP) based on `config/mcp_servers.yaml`
-6. **Logging** (`mcp_agent/logging/setup.py`): Structured JSON logs with loguru, session/node context binding
+- mcp_agent.main: application entrypoint (uvicorn)
+- mcp_agent/api/models.py: Pydantic request/response models
+- mcp_agent/session/: Redis session management utilities
+- mcp_agent/agent/: Agent state, decision logic, and orchestration
+- config/mcp_servers.yaml: Example MCP server entries (edit to add servers)
 
-### Key Components
+## Key conventions (project-specific)
 
-- **Settings** (`settings.py`): Pydantic-based config loaded from `.env` (LLM URL/model, Redis URL, timeouts, MCP config path)
-- **Types** (`types.py`): Type aliases (`SessionId`, `ToolId`, `AgentDecision`)
-- **Validators** (`utils/validators.py`): Input validation helpers
-- **API Models** (`api/models.py`): Pydantic models for REST request/response (ChatRequest, ChatResponse, ToolCallSummary)
+- Async-first: prefer `async def` and `await` for I/O. Tests use `pytest-asyncio`.
+- Type hints everywhere: functions and methods must be typed (pyright checks).
+- Dataclass AgentState: agent conversation state serializes to Redis; keep fields stable to avoid migration issues.
+- Pydantic for external/API contracts: add fields to Pydantic models rather than mutating raw dicts.
+- Tool call resilience: tool failures use auto-retry and optional fallback tools—keep retries/fallback logic in place when adding tools.
+- Config via environment: `.env` values control LLM, Redis, and timeouts—don't hardcode secrets.
 
-### Session State (Redis)
+## Environment variables (high-level)
 
-Sessions store:
-- Conversation history (user, assistant, tool messages with timestamps)
-- Tool call records (tool_id, status, output/error, attempt count, duration)
-- Agent metadata (turn count, state snapshots)
-- TTL-based auto-expiration (configurable via `SESSION_TTL_SECONDS`)
+Required:
+- LLM_BASE_URL or OPENROUTER_BASE_URL (LLM provider URL)
+- LLM_MODEL or OPENROUTER model id
+- REDIS_URL (e.g., redis://localhost:6379/0)
 
-Per-session write locks prevent concurrent modifications.
+Useful defaults are defined in docker-compose.yml and `.env.example`.
 
-### MCP Server Configuration
+## Docker & CI notes
 
-Edit `config/mcp_servers.yaml` to add/modify MCP servers:
-- **Stdio transport**: Subprocess-based (e.g., local Python tools)
-- **SSE transport**: HTTP-based with Server-Sent Events
-- **FastMCP transport**: In-process FastMCP server
+- The Dockerfile is multi-stage (uv sync in build stage). CI should export a cached `.venv` or re-run `uv sync`.
+- Compose healthchecks validate Redis and the FastAPI health endpoint. Use `docker-compose logs -f helios-agent` to debug startup failures.
 
-Each server has a timeout (default 5000ms) and tools are auto-discovered on startup.
+## MCP servers & tools
 
-## Key Conventions
+- Edit `config/mcp_servers.yaml` to declare MCP servers. The agent discovers tools at startup and registers them in the ToolRegistry.
+- Example transports: stdio (subprocess), sse (HTTP), fastmcp (in-process)
 
-- **Async-first design**: Use `async/await` throughout; leverage `pytest-asyncio` for tests
-- **Type hints required**: All functions/methods must have type hints (enables Pyright checking)
-- **Structured logging**: Use loguru logger, not print(); JSON output to stdout
-- **Pydantic models**: All API contracts use Pydantic with validation
-- **Dataclass state**: Agent state uses `@dataclass` with field defaults for Redis serialization
-- **Error handling**: Tool failures auto-retry with fallback; agent decisions include error handling path
-- **Config via environment**: All runtime config in `.env`, validated at startup via Settings class
-- **Session-scoped state**: No global state; everything Redis-backed with session_id
+## Where to look next (quick pointers)
 
-## Environment Variables
-
-**Required:**
-- `LLM_BASE_URL`: LLM provider URL (e.g., https://api.openrouter.ai/api/v1)
-- `LLM_MODEL`: Model identifier (e.g., openrouter/anthropic/claude-3.5-sonnet)
-- `REDIS_URL`: Redis connection string (e.g., redis://localhost:6379/0)
-
-**Optional (with defaults):**
-- `MAX_TURNS=5`: Max conversation turns per session
-- `SESSION_TTL_SECONDS=3600`: Session expiry in seconds
-- `TOOL_TIMEOUT_MS=5000`: Tool execution timeout
-- `LOG_LEVEL=INFO`: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `MCP_CONFIG_PATH=./config/mcp_servers.yaml`: Path to MCP server config
-
-See `.env.example` for full list.
-
-## Docker
-
-**Multi-stage Dockerfile:**
-- Stage 1: Builder (installs deps with UV)
-- Stage 2: Runtime (minimal Python slim image, non-root user `appuser`)
-
-**Compose services:**
-- `redis`: Session store (Redis 7.2 Alpine)
-- `openrouter-llm`: Mock LLM server for local testing (MockServer)
-- `helios-agent`: FastAPI app with health checks
-
-Run: `docker-compose up` (starts all services with health checks and networking)
-
-## Common Tasks
-
-**Add a new MCP server:**
-1. Update `config/mcp_servers.yaml` with server details (name, type, command/url)
-2. Server tools are auto-discovered on agent startup
-3. Tool execution routes through ToolRegistry based on tool_id (server.tool_name)
-
-**Add API endpoint:**
-1. Define Pydantic model in `api/models.py`
-2. Add route to FastAPI app (typically in a new `api/routes.py`)
-3. Validate input with Pydantic, call agent logic, return typed response
-
-**Handle tool failures:**
-- Tool failures trigger auto-retry logic (configurable attempts)
-- After retries exhausted, fallback tool is invoked if available
-- Failure recorded in ToolCallRecord with error message and attempt count
-
-**Debug session state:**
-- Use Redis CLI: `redis-cli -u redis://localhost:6379/0`
-- Query session keys: `KEYS *session_id*`
-- Inspect session data: `GET session_key` (returns JSON-serialized state)
+- Add routes: `mcp_agent/api/` (models + new routes in `api/routes.py`)
+- Session debugging: `redis-cli -u redis://localhost:6379/0` and inspect session keys
+- Tests: `tests/` contains unit/async tests—run single tests during development
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
