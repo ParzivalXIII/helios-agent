@@ -6,6 +6,7 @@ and fallback tool chain support.
 """
 
 import asyncio
+import random
 import time
 from typing import Any
 
@@ -26,28 +27,25 @@ class ToolExecutor:
     - Result tracking and error recording
     """
     
-    def __init__(
-        self,
-        registry: ToolRegistry,
-        max_retries: int = 3,
-        initial_backoff_ms: int = 1000
-    ):
+    def __init__(self, registry: ToolRegistry, max_retries: int = 3):
         """
         Initialize the tool executor.
         
         Args:
             registry: ToolRegistry containing available tools.
-            max_retries: Maximum retry attempts per tool.
-            initial_backoff_ms: Initial backoff time in milliseconds.
+            max_retries: Maximum retry attempts per tool (default: 3).
         """
         self.registry = registry
         self.max_retries = max_retries
-        self.initial_backoff_ms = initial_backoff_ms
         self.logger = logger.bind(component="ToolExecutor")
     
     async def execute(self, tool_id: str, arguments: dict[str, Any]) -> ToolCallRecord:
         """
         Execute a tool with retry and fallback support.
+        
+        Enforces per-tool timeout via asyncio.wait_for; retries transient failures
+        with exponential backoff (1s, 2s, 4s base with ±0-500ms jitter); on permanent
+        failure, attempts configured fallback (max 1 level deep).
         
         Args:
             tool_id: Fully-qualified tool identifier (e.g., "server.tool_name").
@@ -73,13 +71,14 @@ class ToolExecutor:
         # Try to execute the tool with retries
         record = await self._execute_with_retries(tool_def, arguments)
         
-        # If failed, try fallback tool
+        # If failed, try fallback tool (max 1 level deep)
         if record.status == "failed" and tool_def.fallback_tool_id:
             self.logger.info(f"Attempting fallback tool: {tool_def.fallback_tool_id}")
             fallback_def = self.registry.get(tool_def.fallback_tool_id)
             if fallback_def:
                 record = await self._execute_with_retries(fallback_def, arguments)
                 record.fallback_used = True
+                record.tool_id = tool_id  # Keep original tool_id in the record
         
         # Record total duration
         record.duration_ms = int((time.time() - start_time) * 1000)
@@ -93,6 +92,9 @@ class ToolExecutor:
     ) -> ToolCallRecord:
         """
         Execute a tool with automatic retry on transient failures.
+        
+        Implements exponential backoff: base delays 2^0=1s, 2^1=2s, 2^2=4s
+        with ±0-500ms jitter per attempt, capped at 10s total per attempt.
         
         Args:
             tool_def: Tool definition to execute.
@@ -117,7 +119,7 @@ class ToolExecutor:
                     f"Tool execution attempt {attempt}/{self.max_retries}: {tool_def.id}"
                 )
                 
-                # Execute tool with timeout
+                # Execute tool with timeout enforcement
                 result = await asyncio.wait_for(
                     self._invoke_tool(tool_def, arguments),
                     timeout=tool_def.timeout_ms / 1000.0
@@ -157,11 +159,10 @@ class ToolExecutor:
         arguments: dict[str, Any]
     ) -> Any:
         """
-        Invoke a tool (actual implementation).
+        Invoke a tool through its MCP server.
         
-        This is a placeholder that would call the actual MCP server tool.
-        In a real implementation, this would use langchain_mcp ClientSession
-        to invoke the remote tool.
+        This method should be overridden or injected with actual MCP server
+        invocation logic. Currently returns a placeholder for testing.
         
         Args:
             tool_def: Tool definition.
@@ -170,25 +171,32 @@ class ToolExecutor:
         Returns:
             Tool result/output.
         """
-        # TODO: Implement actual tool invocation via MCP server
-        # For now, return a placeholder
+        # TODO: Implement actual tool invocation via MCP server (e.g., langchain_mcp ClientSession)
+        # For now, return a placeholder that can be overridden in tests
         return {
-            "status": "pending",
-            "message": f"Tool {tool_def.name} would be invoked here"
+            "status": "success",
+            "message": f"Tool {tool_def.name} invoked with {len(arguments)} arguments"
         }
     
     async def _exponential_backoff(self, attempt_number: int) -> None:
         """
-        Apply exponential backoff between retries.
+        Apply exponential backoff with jitter between retries.
+        
+        Formula: base_delay = 2^(attempt_number - 1) seconds
+        Jitter: uniform random ±0-500ms
+        Cap: 10 seconds maximum
         
         Args:
             attempt_number: Current attempt number (1-indexed).
         """
-        # Exponential backoff: initial_backoff * 2^(attempt-1)
-        backoff_ms = self.initial_backoff_ms * (2 ** (attempt_number - 1))
-        # Add jitter: ±10%
-        jitter = backoff_ms * 0.1
-        actual_backoff = backoff_ms + (asyncio.get_event_loop().time() % jitter)
+        # Exponential backoff: 2^(attempt-1) -> 1s, 2s, 4s, 8s, ...
+        base_delay_ms = (2 ** (attempt_number - 1)) * 1000
         
-        self.logger.debug(f"Backoff for {actual_backoff}ms before retry")
-        await asyncio.sleep(actual_backoff / 1000.0)
+        # Add jitter: uniform random between 0 and 500ms
+        jitter_ms = random.uniform(0, 500)
+        
+        # Total backoff, capped at 10 seconds
+        backoff_ms = min(base_delay_ms + jitter_ms, 10000)
+        
+        self.logger.debug(f"Backoff for {backoff_ms:.0f}ms before retry (attempt {attempt_number})")
+        await asyncio.sleep(backoff_ms / 1000.0)

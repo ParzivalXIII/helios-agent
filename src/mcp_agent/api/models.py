@@ -107,3 +107,37 @@ class HealthResponse(BaseModel):
     )
     tool_count: int = Field(default=0, description="Number of available tools.")
     timestamp: datetime = Field(..., description="Response timestamp (ISO 8601).")
+
+
+class TraceEvent(BaseModel):
+    """A single trace event from the debug trace buffer."""
+
+    timestamp: str = Field(..., description="Event timestamp (ISO 8601).")
+    level: str = Field(..., description="Log level (DEBUG, INFO, WARNING, ERROR, etc.).")
+    message: str = Field(..., description="Log message text.")
+    context: dict = Field(
+        default_factory=dict, description="Additional context from log bindings."
+    )
+
+
+class TraceResponse(BaseModel):
+    """Response body for GET /api/debug/trace/{session_id}."""
+
+    session_id: str = Field(..., description="Session UUID4.")
+    events: list[TraceEvent] = Field(
+        default_factory=list, description="Ordered list of trace events."
+    )
+
+
+class MetricsResponse(BaseModel):
+    """Response body for GET /api/debug/metrics."""
+
+    total_sessions: int = Field(default=0, description="Total sessions created.")
+    total_turns: int = Field(default=0, description="Total turns across all sessions.")
+    tool_calls: int = Field(default=0, description="Total tool invocations.")
+    tool_failures: int = Field(default=0, description="Total tool execution failures.")
+    llm_invocations: int = Field(default=0, description="Total LLM API calls.")
+    total_duration_ms: int = Field(default=0, description="Cumulative processing duration in ms.")
+    avg_duration_ms: int = Field(
+        default=0, description="Average duration per turn in ms (calculated)."
+    )

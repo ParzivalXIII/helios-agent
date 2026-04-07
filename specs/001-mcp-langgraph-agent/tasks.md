@@ -102,8 +102,8 @@
 
 **Independent Test**: Patch `ToolExecutor` to raise a transient error twice then succeed → verify response has `turn_count=1` and succeeded. Patch to always fail with a fallback configured → verify fallback tool invoked. Patch fallback to also fail → verify `error_code: "tool_execution_failed"` in response.
 
-- [ ] T031 [US3] Implement `src/mcp_agent/mcp/executors.py` — `ToolExecutionResult` dataclass (tool_id, success, output, error, attempt_count, duration_ms, fallback_used); `ToolExecutor` class: `async def execute(tool_def: ToolDefinition, input: dict, registry: ToolRegistry) -> ToolExecutionResult`; enforces `TOOL_TIMEOUT_MS` via `asyncio.wait_for`; retry loop: `max_attempts=3`, delay formula `2**attempt + random.uniform(0, 0.5)` capped at 10s; on permanent failure checks `tool_def.fallback_tool_id` and recursively executes fallback (max 1 fallback level); populates `ToolExecutionResult` with attempt count and fallback flag
-- [ ] T032 [US3] Update `node_invoke_tool` in `src/mcp_agent/agent/nodes.py` to delegate all execution to `ToolExecutor.execute()` instead of calling the tool directly; store `ToolExecutionResult` fields in `ToolCallRecord` appended to `state.tool_calls_this_turn`
+- [X] T031 [US3] Implement `src/mcp_agent/mcp/executors.py` — `ToolExecutionResult` dataclass (tool_id, success, output, error, attempt_count, duration_ms, fallback_used); `ToolExecutor` class: `async def execute(tool_def: ToolDefinition, input: dict, registry: ToolRegistry) -> ToolExecutionResult`; enforces `TOOL_TIMEOUT_MS` via `asyncio.wait_for`; retry loop: `max_attempts=3`, delay formula `2**attempt + random.uniform(0, 0.5)` capped at 10s; on permanent failure checks `tool_def.fallback_tool_id` and recursively executes fallback (max 1 fallback level); populates `ToolExecutionResult` with attempt count and fallback flag
+- [X] T032 [US3] Update `node_invoke_tool` in `src/mcp_agent/agent/nodes.py` to delegate all execution to `ToolExecutor.execute()` instead of calling the tool directly; store `ToolExecutionResult` fields in `ToolCallRecord` appended to `state.tool_calls_this_turn`
 
 **Checkpoint**: Recovery behavior complete. Retry, fallback, and clean failure paths all handled. US3 independently testable by mocking `ToolExecutor`.
 
@@ -115,11 +115,11 @@
 
 **Independent Test**: `GET /api/session/{id}` → 200 with session summary. `DELETE /api/session/{id}` → 200. `GET /api/session/{id}` → 404. `GET /api/health` → 200 with `status: "healthy"`. `GET /api/debug/metrics` → 200 with non-null counters.
 
-- [ ] T033 [P] [US4] Implement `GET /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.get()`, returns `SessionModel` (id, turn_count, messages, last_activity, state); 404 with `error_code: "session_not_found"` if missing
-- [ ] T034 [P] [US4] Implement `DELETE /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.delete()`, idempotent (200 even if session did not exist per contracts/api.md)
-- [ ] T035 [P] [US4] Implement `GET /api/health` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — pings Redis (`redis.ping()`), pings LLM provider via `LlmClient`; returns `HealthResponse` with `status: "healthy"|"degraded"|"unhealthy"`, per-dependency status, tool count from `tool_registry`; HTTP 200 for healthy/degraded, 503 for unhealthy
-- [ ] T036 [P] [US4] Implement `GET /api/debug/trace/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads structured log records bound with `session_id=` from an in-memory `TraceBuffer` (ring buffer populated by loguru sink); returns ordered list of trace events; 404 if no records found for session
-- [ ] T037 [P] [US4] Implement `GET /api/debug/metrics` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads from `MetricsStore` (thread-safe in-process counters populated by chat_handler and ToolExecutor): `total_sessions`, `total_turns`, `tool_calls`, `tool_failures`, `llm_invocations`, `avg_duration_ms`; initialize `MetricsStore` in `app.state` during lifespan startup
+- [X] T033 [P] [US4] Implement `GET /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.get()`, returns `SessionModel` (id, turn_count, messages, last_activity, state); 404 with `error_code: "session_not_found"` if missing
+- [X] T034 [P] [US4] Implement `DELETE /api/session/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — calls `SessionStore.delete()`, idempotent (200 even if session did not exist per contracts/api.md)
+- [X] T035 [P] [US4] Implement `GET /api/health` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — pings Redis (`redis.ping()`), pings LLM provider via `LlmClient`; returns `HealthResponse` with `status: "healthy"|"degraded"|"unhealthy"`, per-dependency status, tool count from `tool_registry`; HTTP 200 for healthy/degraded, 503 for unhealthy
+- [X] T036 [P] [US4] Implement `GET /api/debug/trace/{session_id}` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads structured log records bound with `session_id=` from an in-memory `TraceBuffer` (ring buffer populated by loguru sink); returns ordered list of trace events; 404 if no records found for session
+- [X] T037 [P] [US4] Implement `GET /api/debug/metrics` handler in `src/mcp_agent/api/handlers.py` and route in `src/mcp_agent/api/router.py` — reads from `MetricsStore` (thread-safe in-process counters populated by chat_handler and ToolExecutor): `total_sessions`, `total_turns`, `tool_calls`, `tool_failures`, `llm_invocations`, `avg_duration_ms`; initialize `MetricsStore` in `app.state` during lifespan startup
 
 **Checkpoint**: All 6 REST endpoints implemented. Full operator visibility in place. US4 independently testable.
 
@@ -129,8 +129,8 @@
 
 **Purpose**: Configuration quality, type safety gate, and import smoke-test.
 
-- [ ] T038 [P] Add `[tool.pyright]` strict settings and `[tool.pytest.ini_options]` with `testpaths`, `asyncio_mode = "auto"`, and `markers` to `pyproject.toml`
-- [ ] T039 [P] Verify `src/mcp_agent` is importable: `uv run python -c "from mcp_agent.main import create_app; print('OK')"` must succeed (fix any import-time errors)
+- [X] T038 [P] Add `[tool.pyright]` strict settings and `[tool.pytest.ini_options]` with `testpaths`, `asyncio_mode = "auto"`, and `markers` to `pyproject.toml`
+- [X] T039 [P] Verify `src/mcp_agent` is importable: `uv run python -c "from mcp_agent.main import create_app; print('OK')"` must succeed (fix any import-time errors)
 
 ---
 

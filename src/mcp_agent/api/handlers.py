@@ -8,10 +8,21 @@ and diagnostic endpoints.
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from mcp_agent.agent.state import AgentState, Message
 from mcp_agent.agent.nodes import LlmClient, LLMProviderError
-from mcp_agent.api.models import ChatRequest, ChatResponse, ErrorResponse, ToolCallSummary
+from mcp_agent.api.models import (
+    ChatRequest,
+    ChatResponse,
+    ErrorResponse,
+    ToolCallSummary,
+    SessionModel,
+    HealthResponse,
+    TraceResponse,
+    TraceEvent,
+    MetricsResponse,
+)
 from mcp_agent.session.manager import SessionManager
 from mcp_agent.session.store import (
     SessionStore,
@@ -22,6 +33,10 @@ from mcp_agent.session.store import (
 from mcp_agent.session.models import dataclass_to_dict, dict_to_agent_state
 from mcp_agent.settings import Settings
 from mcp_agent.utils.validators import validate_message, validate_session_id
+
+if TYPE_CHECKING:
+    from mcp_agent.debug.trace import TraceBuffer
+    from mcp_agent.debug.metrics import MetricsStore
 
 logger = logging.getLogger(__name__)
 
@@ -366,3 +381,212 @@ async def chat_handler(
             error=error_response,
             metadata=request.metadata,
         )
+
+
+async def get_session_handler(
+    session_id: str,
+    store: SessionStore,
+) -> SessionModel:
+    """
+    Retrieve session details by ID.
+    
+    Args:
+        session_id: The session identifier
+        store: SessionStore for Redis operations
+        
+    Returns:
+        SessionModel with session details
+        
+    Raises:
+        SessionNotFoundError: If session not found
+    """
+    try:
+        validate_session_id(session_id)
+    except ValueError as e:
+        logger.warning(f"Session ID validation failed: {e}")
+        raise SessionNotFoundError(f"Invalid session ID format: {e}")
+    
+    state = await store.get(session_id)
+    if state is None:
+        logger.warning(f"Session not found: {session_id}")
+        raise SessionNotFoundError(f"Session {session_id} not found")
+    
+    # Extract messages as dicts
+    messages = [dataclass_to_dict(msg) for msg in state.messages]
+    
+    # Convert state to dict for response
+    state_dict = dataclass_to_dict(state)
+    
+    return SessionModel(
+        id=session_id,
+        turn_count=state.turn_count,
+        messages=messages,
+        last_activity=state.last_activity,
+        state=state_dict,
+    )
+
+
+async def delete_session_handler(
+    session_id: str,
+    store: SessionStore,
+) -> dict[str, str]:
+    """
+    Delete a session (idempotent).
+    
+    Args:
+        session_id: The session identifier
+        store: SessionStore for Redis operations
+        
+    Returns:
+        Dictionary with success message
+    """
+    try:
+        validate_session_id(session_id)
+    except ValueError as e:
+        logger.warning(f"Session ID validation failed: {e}")
+        # Still return 200 for idempotence
+        return {"message": f"Session deleted (or did not exist)"}
+    
+    try:
+        await store.delete(session_id)
+        logger.info(f"Session {session_id} deleted")
+    except Exception as e:
+        # Log error but still return 200 for idempotence
+        logger.error(f"Error deleting session {session_id}: {e}")
+    
+    return {"message": "Session deleted"}
+
+
+async def get_health_handler(
+    store: SessionStore,
+    llm_client: LlmClient,
+    tool_registry=None,
+) -> HealthResponse:
+    """
+    Check service health by pinging dependencies.
+    
+    Args:
+        store: SessionStore with Redis connection
+        llm_client: LlmClient for LLM provider health check
+        tool_registry: ToolRegistry with available tools
+        
+    Returns:
+        HealthResponse with dependency status
+    """
+    redis_up = False
+    llm_up = False
+    tool_count = 0
+    
+    # Check Redis
+    try:
+        await store.redis.ping()
+        redis_up = True
+        logger.debug("Redis health check passed")
+    except Exception as e:
+        logger.warning(f"Redis health check failed: {e}")
+    
+    # Check LLM provider
+    try:
+        # Try a simple completion to verify provider is accessible
+        # Use a minimal request
+        test_messages = [{"role": "user", "content": "ping"}]
+        response = await asyncio.wait_for(
+            llm_client.complete(test_messages),
+            timeout=5.0,
+        )
+        llm_up = True
+        logger.debug("LLM provider health check passed")
+    except asyncio.TimeoutError:
+        logger.warning("LLM provider health check timed out")
+    except Exception as e:
+        logger.warning(f"LLM provider health check failed: {e}")
+    
+    # Get tool count
+    if tool_registry:
+        tool_count = tool_registry.count()
+    
+    # Determine overall status
+    if redis_up and llm_up:
+        status = "healthy"
+    elif redis_up or llm_up:
+        status = "degraded"
+    else:
+        status = "unhealthy"
+    
+    return HealthResponse(
+        status=status,
+        redis="up" if redis_up else "down",
+        llm_provider="up" if llm_up else "down",
+        tool_count=tool_count,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+
+async def get_trace_handler(
+    session_id: str,
+    trace_buffer: "TraceBuffer",
+) -> TraceResponse:
+    """
+    Retrieve trace events for a session.
+    
+    Args:
+        session_id: The session identifier
+        trace_buffer: TraceBuffer with collected events
+        
+    Returns:
+        TraceResponse with ordered list of trace events
+        
+    Raises:
+        SessionNotFoundError: If no traces found for session
+    """
+    try:
+        validate_session_id(session_id)
+    except ValueError as e:
+        logger.warning(f"Session ID validation failed: {e}")
+        raise SessionNotFoundError(f"Invalid session ID format: {e}")
+    
+    events = trace_buffer.get_traces_by_session_id(session_id)
+    if not events:
+        logger.info(f"No traces found for session {session_id}")
+        raise SessionNotFoundError(f"No traces found for session {session_id}")
+    
+    # Convert events to TraceEvent models
+    trace_events = [
+        TraceEvent(
+            timestamp=event["timestamp"],
+            level=event["level"],
+            message=event["message"],
+            context=event.get("context", {}),
+        )
+        for event in events
+    ]
+    
+    return TraceResponse(
+        session_id=session_id,
+        events=trace_events,
+    )
+
+
+async def get_metrics_handler(
+    metrics_store: "MetricsStore",
+) -> MetricsResponse:
+    """
+    Retrieve aggregate metrics.
+    
+    Args:
+        metrics_store: MetricsStore with collected metrics
+        
+    Returns:
+        MetricsResponse with all metric counters
+    """
+    snapshot = metrics_store.get_snapshot()
+    
+    return MetricsResponse(
+        total_sessions=snapshot["total_sessions"],
+        total_turns=snapshot["total_turns"],
+        tool_calls=snapshot["tool_calls"],
+        tool_failures=snapshot["tool_failures"],
+        llm_invocations=snapshot["llm_invocations"],
+        total_duration_ms=snapshot["total_duration_ms"],
+        avg_duration_ms=snapshot["avg_duration_ms"],
+    )

@@ -1,7 +1,7 @@
 [project]
 name = "helios-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-turn LLM agent with MCP integration, LangGraph orchestration, and diagnostic visibility"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -24,9 +24,28 @@ dependencies = [
     "uvicorn[standard]>=0.43.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/your-org/helios-agent"
+
+[tool.uv]
+managed = true
+
 [dependency-groups]
 dev = [
     "pyright>=1.1.408",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+]
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/__pycache__", ".venv"]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests",
 ]
